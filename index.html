@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>C-DOT Log Analyser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#0b1120;
+    --panel:#131c2b;
+    --panel-2:#0f1726;
+    --line:#22304a;
+    --line-soft:#1a2436;
+    --text:#d6dfee;
+    --muted:#7d8da8;
+    --signal:#f0a202;
+    --ok:#3fbf7f;
+    --alert:#e5484d;
+    --mono:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans:'IBM Plex Sans', system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+
+  html,body{height:100%}
+
+  body{
+    background:var(--ground);
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.55;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+
+  /* ── header ── */
+  header{
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:14px 22px;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
+  }
+  .mark{
+    font-family:var(--mono);
+    font-weight:600;
+    font-size:15px;
+    letter-spacing:.14em;
+    color:var(--ground);
+    background:var(--signal);
+    padding:3px 10px;
+  }
+  header h1{
+    font-size:16px;
+    font-weight:600;
+    letter-spacing:.01em;
+  }
+  .status{
+    margin-left:auto;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--muted);
+  }
+  .dot{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--muted);
+  }
+  .dot.live{background:var(--ok)}
+  .dot.busy{background:var(--signal)}
+  .dot.down{background:var(--alert)}
+
+  /* ── transcript ── */
+  #transcript{
+    flex:1;
+    overflow-y:auto;
+    padding:26px 22px 8px;
+  }
+  .wrap{max-width:880px;margin:0 auto}
+
+  .empty{
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:10px;
+    max-width:880px;
+    margin:0 auto;
+  }
+  .empty h2{font-size:22px;font-weight:600}
+  .empty p{color:var(--muted);max-width:56ch}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{
+    font-family:var(--mono);
+    font-size:12.5px;
+    color:var(--text);
+    background:var(--panel);
+    border:1px solid var(--line);
+    padding:6px 12px;
+    cursor:pointer;
+  }
+  .chip:hover{border-color:var(--signal);color:var(--signal)}
+
+  .turn{margin-bottom:26px}
+
+  .query{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    font-family:var(--mono);
+    font-size:14px;
+    padding-bottom:10px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .caret{color:var(--signal);user-select:none}
+  .qtext{flex:1;word-break:break-word}
+  .qmeta{
+    font-family:var(--mono);
+    font-size:11.5px;
+    color:var(--muted);
+    white-space:nowrap;
+    padding-top:2px;
+  }
+
+  .tools{display:flex;gap:4px;margin-left:6px}
+  .tool{
+    background:none;
+    border:1px solid transparent;
+    color:var(--muted);
+    font-family:var(--mono);
+    font-size:11.5px;
+    padding:2px 7px;
+    cursor:pointer;
+  }
+  .tool:hover{color:var(--signal);border-color:var(--line)}
+  .tool:focus-visible,
+  .chip:focus-visible,
+  #send:focus-visible,
+  #query:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+  .answer{
+    font-family:var(--mono);
+    font-size:13.5px;
+    line-height:1.7;
+    white-space:pre-wrap;
+    word-break:break-word;
+    padding:14px 18px;
+    margin-top:12px;
+    background:var(--panel-2);
+    border:1px solid var(--line-soft);
+    border-left:2px solid var(--line);
+  }
+  .turn.done .answer{border-left-color:var(--ok)}
+  .turn.error .answer{border-left-color:var(--alert);color:#ffb3b6}
+
+  .pending{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--muted);
+    margin-top:12px;
+    padding:14px 18px;
+    background:var(--panel-2);
+    border:1px solid var(--line-soft);
+    border-left:2px solid var(--signal);
+  }
+  .pending::after{
+    content:'';
+    animation:dots 1.2s steps(4,end) infinite;
+  }
+  @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+
+  .edit-row{display:flex;gap:8px;width:100%}
+  .edit-row input{
+    flex:1;
+    background:var(--ground);
+    border:1px solid var(--signal);
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:14px;
+    padding:6px 10px;
+  }
+  .edit-row input:focus{outline:none}
+
+  /* ── composer ── */
+  .composer{
+    flex-shrink:0;
+    background:var(--panel);
+    border-top:1px solid var(--line);
+    padding:14px 22px;
+  }
+  .composer .wrap{display:flex;align-items:center;gap:10px}
+  #query{
+    flex:1;
+    background:var(--ground);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:14px;
+    padding:11px 14px;
+  }
+  #query::placeholder{color:var(--muted)}
+  #query:focus{border-color:var(--signal)}
+  #send{
+    background:var(--signal);
+    color:var(--ground);
+    border:none;
+    font-family:var(--sans);
+    font-weight:600;
+    font-size:14px;
+    padding:11px 22px;
+    cursor:pointer;
+  }
+  #send:hover{background:#ffb524}
+  #send:disabled{background:var(--line);color:var(--muted);cursor:not-allowed}
+
+  #transcript::-webkit-scrollbar{width:8px}
+  #transcript::-webkit-scrollbar-thumb{background:var(--line)}
+
+  @media (max-width:560px){
+    header{padding:12px 14px;gap:10px}
+    header h1{font-size:14px}
+    .status{font-size:11px}
+    #transcript{padding:18px 14px 6px}
+    .composer{padding:12px 14px}
+    #send{padding:11px 14px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .pending::after{animation:none;content:'...'}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">C-DOT</div>
+  <h1>Log Analyser</h1>
+  <div class="status">
+    <span class="dot live" id="dot"></span>
+    <span id="state">Ready</span>
+    <span id="clock"></span>
+  </div>
+</header>
+
+<div id="transcript" aria-live="polite">
+  <div class="empty" id="empty">
+    <h2>Ask a question about the logs</h2>
+    <p>Auth and system logs are loaded on the server. Ask in plain English — failed SSH attempts, activity from one IP, sudden spikes.</p>
+    <div class="chips">
+      <button class="chip">Show failed login attempts</button>
+      <button class="chip">Which IPs failed most often?</button>
+      <button class="chip">Successful logins today</button>
+      <button class="chip">Any activity from 10.0.1.4?</button>
+    </div>
+  </div>
+</div>
+
+<div class="composer">
+  <div class="wrap">
+    <input id="query" type="text" autocomplete="off" placeholder="Type your question and press Enter" />
+    <button id="send">Ask</button>
+  </div>
+</div>
+
+<script>
+// ── state ──
+var messages = [];      // {question, answer, state, nodes}
+var timers = {};
+
+var transcript = document.getElementById("transcript");
+var queryInput = document.getElementById("query");
+var sendBtn    = document.getElementById("send");
+var dot        = document.getElementById("dot");
+var stateText  = document.getElementById("state");
+
+var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ── clock ──
+function tick(){
+  document.getElementById("clock").textContent =
+    new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+}
+tick(); setInterval(tick, 1000);
+
+function setStatus(kind, label){
+  dot.className = "dot " + kind;
+  stateText.textContent = label;
+}
+
+function scrollToBottom(){
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+// ── rendering ──
+function renderAll(){
+  transcript.innerHTML = "";
+
+  if (messages.length === 0){
+    transcript.appendChild(buildEmpty());
+    return;
+  }
+
+  var wrap = document.createElement("div");
+  wrap.className = "wrap";
+
+  messages.forEach(function(msg, i){
+    wrap.appendChild(buildTurn(msg, i));
+  });
+
+  transcript.appendChild(wrap);
+  scrollToBottom();
+}
+
+function buildEmpty(){
+  var box = document.createElement("div");
+  box.className = "empty";
+  box.innerHTML =
+    '<h2>Ask a question about the logs</h2>' +
+    '<p>Auth and system logs are loaded on the server. Ask in plain English — failed SSH attempts, activity from one IP, sudden spikes.</p>' +
+    '<div class="chips"></div>';
+  var samples = ["Show failed login attempts","Which IPs failed most often?","Successful logins today","Any activity from 10.0.1.4?"];
+  var chips = box.querySelector(".chips");
+  samples.forEach(function(s){
+    var b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = s;
+    b.onclick = function(){ queryInput.value = s; send(); };
+    chips.appendChild(b);
+  });
+  return box;
+}
+
+function buildTurn(msg, index){
+  var turn = document.createElement("div");
+  turn.className = "turn " + msg.state;
+
+  // query line
+  var query = document.createElement("div");
+  query.className = "query";
+
+  var caret = document.createElement("span");
+  caret.className = "caret";
+  caret.textContent = ">";
+  query.appendChild(caret);
+
+  var qtext = document.createElement("span");
+  qtext.className = "qtext";
+  qtext.textContent = msg.question;
+  query.appendChild(qtext);
+
+  var meta = document.createElement("span");
+  meta.className = "qmeta";
+  meta.textContent = msg.time;
+  query.appendChild(meta);
+
+  var tools = document.createElement("div");
+  tools.className = "tools";
+
+  var editBtn = document.createElement("button");
+  editBtn.className = "tool";
+  editBtn.textContent = "edit";
+  editBtn.onclick = function(){ startEdit(index, query); };
+  tools.appendChild(editBtn);
+
+  if (msg.state === "done"){
+    var copyBtn = document.createElement("button");
+    copyBtn.className = "tool";
+    copyBtn.textContent = "copy";
+    copyBtn.onclick = function(){
+      navigator.clipboard.writeText(msg.answer).then(function(){
+        copyBtn.textContent = "copied";
+        setTimeout(function(){ copyBtn.textContent = "copy"; }, 1400);
+      });
+    };
+    tools.appendChild(copyBtn);
+  }
+
+  query.appendChild(tools);
+  turn.appendChild(query);
+
+  // answer
+  if (msg.state === "pending"){
+    var p = document.createElement("div");
+    p.className = "pending";
+    p.textContent = "Reading logs";
+    turn.appendChild(p);
+  } else {
+    var a = document.createElement("div");
+    a.className = "answer";
+    a.textContent = msg.answer;
+    turn.appendChild(a);
+    msg.answerNode = a;
+  }
+
+  return turn;
+}
+
+// ── inline edit ──
+function startEdit(index, queryLine){
+  var msg = messages[index];
+  queryLine.innerHTML = "";
+
+  var row = document.createElement("div");
+  row.className = "edit-row";
+
+  var field = document.createElement("input");
+  field.type = "text";
+  field.value = msg.question;
+
+  var save = document.createElement("button");
+  save.className = "tool";
+  save.textContent = "run";
+
+  var cancel = document.createElement("button");
+  cancel.className = "tool";
+  cancel.textContent = "cancel";
+
+  function commit(){
+    var v = field.value.trim();
+    if (!v) return;
+    msg.question = v;
+    msg.time = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+    ask(index, v);
+  }
+
+  save.onclick = commit;
+  cancel.onclick = renderAll;
+  field.addEventListener("keydown", function(e){
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") renderAll();
+  });
+
+  row.appendChild(field);
+  row.appendChild(save);
+  row.appendChild(cancel);
+  queryLine.appendChild(row);
+  field.focus();
+  field.select();
+}
+
+// ── network ──
+function ask(index, question){
+  var msg = messages[index];
+  msg.state = "pending";
+  msg.answer = "";
+  renderAll();
+  setStatus("busy", "Querying");
+  sendBtn.disabled = true;
+
+  fetch("/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: question })
+  })
+  .then(function(res){
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    return res.json();
+  })
+  .then(function(data){
+    msg.state = "done";
+    msg.answer = "";
+    renderAll();
+    typeText(index, String(data.answer == null ? "(empty response)" : data.answer));
+    setStatus("live", "Ready");
+    sendBtn.disabled = false;
+  })
+  .catch(function(err){
+    msg.state = "error";
+    msg.answer = "Could not reach the analyser. " + err.message +
+                 "\nCheck that app.py is running and that /ask is reachable.";
+    renderAll();
+    setStatus("down", "No response");
+    sendBtn.disabled = false;
+  });
+}
+
+function send(){
+  var value = queryInput.value.trim();
+  if (!value) return;
+
+  var index = messages.length;
+  messages.push({
+    question: value,
+    answer: "",
+    state: "pending",
+    time: new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})
+  });
+
+  queryInput.value = "";
+  ask(index, value);
+}
+
+// ── typing effect (updates one node, not the whole list) ──
+function typeText(index, fullAnswer){
+  var msg = messages[index];
+
+  if (timers[index]) clearInterval(timers[index]);
+
+  if (reduceMotion || fullAnswer.length > 1200){
+    msg.answer = fullAnswer;
+    if (msg.answerNode) msg.answerNode.textContent = fullAnswer;
+    scrollToBottom();
+    return;
+  }
+
+  var i = 0;
+  timers[index] = setInterval(function(){
+    if (i >= fullAnswer.length){
+      clearInterval(timers[index]);
+      return;
+    }
+    msg.answer += fullAnswer.charAt(i);
+    if (msg.answerNode) msg.answerNode.textContent = msg.answer;
+    i++;
+    scrollToBottom();
+  }, 12);
+}
+
+// ── events ──
+sendBtn.addEventListener("click", send);
+queryInput.addEventListener("keydown", function(e){
+  if (e.key === "Enter") send();
+});
+
+document.querySelectorAll("#empty .chip").forEach(function(b){
+  b.onclick = function(){ queryInput.value = b.textContent; send(); };
+});
+
+queryInput.focus();
+</script>
+</body>
+</html>
